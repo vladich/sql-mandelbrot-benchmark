@@ -11,8 +11,9 @@ for testing recursive query performance, floating-point precision, and computati
 
 A benchmark suite that:
 - Computes the famous [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set) using SQL recursive CTEs
-- Tests multiple SQL engines, currently just DuckDB and a Python implementation for reference.
+- Tests multiple SQL engines, including DuckDB, SQLite, PostgreSQL, and Python implementations for reference.
 - Generates beautiful fractal images as proof of correct computation
+- Prints RPS (full renders per second) alongside elapsed times
 - Reveals which database / SQL engine renders infinity fastest
 
 ## Quick Start
@@ -29,6 +30,35 @@ pip install -r requirements.txt
 python main.py
 ```
 
+PostgreSQL is optional at runtime, but it needs a reachable database. Configure it
+with `POSTGRES_DSN` or normal libpq `PG*` variables:
+
+```bash
+export POSTGRES_DSN="postgresql://user:password@localhost:5432/postgres"
+python postgresqlbrot.py --width 400 --height 240 --iterations 128
+```
+
+For live visual rendering with SQL RPS output:
+
+```bash
+python postgresqlbrot.py --live --width 1400 --height 800 --iterations 128
+```
+
+In `main.py`, RPS means completed full-image renders per second. In
+`postgresqlbrot.py --live`, one SQL query renders the whole current screen into
+an RGB frame buffer. Live SQL RPS is calculated from the last accepted query
+execution time (`1000 / query_ms`), and render RPS is calculated from the last
+accepted query-to-buffer-swap time. Use the on-screen buttons, mouse wheel, or `+`/`-` to zoom; use the
+on-screen buttons, arrow keys, or `WASD` to pan; use `Iter +` / `Iter -` or
+`]` / `[` to change the SQL iteration depth; use `R` to reset and `Q` or `Esc`
+to exit. Add `--fullscreen` if you want the live window to request fullscreen
+mode.
+
+If the live image looks coarse around the boundary, increase the iteration
+depth. PostgreSQL uses `double precision` for the complex-plane math; low
+iteration counts usually cause the visible loss of detail before floating-point
+precision does.
+
 ## Current Benchmark Results
 
 Current results on 1400x800 pixels, 256 max iterations, Macbook Pro M4 Max:
@@ -43,6 +73,7 @@ Current results on 1400x800 pixels, 256 max iterations, Macbook Pro M4 Max:
 | 5  | FastPybrot                                 | 3,327 ms  | 4.17x slower         |
 | 6  | Pure Python                                | 4,328 ms  | 5.43x slower         |
 | 7  | SQLite (SQL)                               | 44,918 ms | 56.36x slower        |
+| -  | PostgreSQL (SQL)                           | configure locally | optional |
 
 **Winner overall: NumPy** - Just 17% faster than ArrowDatafusion using loop unrolling and vectorized operations!
 
@@ -88,17 +119,17 @@ The iteration count determines the color of each pixel, creating the iconic frac
 
 ## Adding New Benchmarks
 
-Want to test PostgreSQL, MySQL, MariaDB, SQLite or even Oracle or SQL-Server? Just:
+Want to test MySQL, MariaDB, Oracle, SQL Server, or another SQL engine? Just:
 
-1. Create a new file (e.g., `postgresqlbrot.py`)
-2. Implement a `run_postgresqlbrot(width, height, max_iterations)` function (the DuckDB implementation is a good starting point)
+1. Create a new file (e.g., `mysqlbrot.py`)
+2. Implement a `run_mysqlbrot(width, height, max_iterations)` function (the DuckDB implementation is a good starting point)
 3. Add one line to `main.py`:
    ```python
    BENCHMARKS = [
        ("DuckDB (SQL)", "duckbrot", "run_duckbrot"),
        ("Pure Python", "pybrot", "run_pybrot"),
        ..., 
-       ("PostgreSQL", "postgresqlbrot", "run_postgresqlbrot"),  # New!
+       ("MySQL", "mysqlbrot", "run_mysqlbrot"),  # New!
    ]
    ```
 
@@ -124,9 +155,10 @@ Higher values = more detail, longer computation time.
 - **Pure Python** - Reference implementation, just to have an idea how fast the database engines are
 - **SQLite** - Works but significantly slower due to recursive CTE overhead
 
+### Supported With Setup
+- **PostgreSQL** - Uses recursive CTEs and `generate_series`; requires a configured PostgreSQL server
+
 ### Should Work (untested, please contribute 🤙)
-- PostgreSQL (with proper recursive CTE support)
-- SQLite (may need query adjustments)
 - others 
 
 ### Known Issues

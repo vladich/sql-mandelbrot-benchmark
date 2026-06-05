@@ -7,38 +7,46 @@ License: MIT
 
 import os
 import time
+
 import numpy as np
 from PIL import Image
 from matplotlib import colormaps
 
 
-def save_mandelbrot_image(mandelbrot_data, max_iterations, filename='output.png'):
+def renders_per_second(elapsed_ms):
+    """Return completed full renders per second for an elapsed millisecond value."""
+    if elapsed_ms <= 0:
+        return float("inf")
+    return 1000.0 / elapsed_ms
+
+
+def format_rps(elapsed_ms):
+    """Format completed full renders per second for benchmark output."""
+    rps = renders_per_second(elapsed_ms)
+    if rps == float("inf"):
+        return "inf"
+    return f"{rps:.2f}"
+
+
+def colorize_mandelbrot(mandelbrot_data, max_iterations):
     """
-    Save Mandelbrot set data as a colorized image with logarithmic scaling.
+    Convert Mandelbrot set data to an RGB image array with logarithmic scaling.
 
     Args:
         mandelbrot_data: 2D array of iteration counts (height x width)
         max_iterations: Maximum iteration value used in computation
-        filename: Output filename (will be saved in 'images/' directory)
+
+    Returns:
+        3D NumPy uint8 RGB array
     """
-    # Ensure images directory exists
-    images_dir = 'images'
-    os.makedirs(images_dir, exist_ok=True)
-
-    # Prepend images directory to filename if not already there
-    if not filename.startswith(images_dir + os.sep):
-        filepath = os.path.join(images_dir, filename)
-    else:
-        filepath = filename
-
     # Convert to numpy array if needed
     if not isinstance(mandelbrot_data, np.ndarray):
         mandelbrot_data = np.array(mandelbrot_data, dtype=np.uint16)
 
     # Apply logarithmic scaling for better color distribution
     mandelbrot_scaled = mandelbrot_data.astype(np.float64)
-    in_set_mask = (mandelbrot_data == max_iterations)
-    escaped_mask = (mandelbrot_data < max_iterations)
+    in_set_mask = mandelbrot_data == max_iterations
+    escaped_mask = mandelbrot_data < max_iterations
 
     mandelbrot_color = np.zeros_like(mandelbrot_scaled)
     if np.any(escaped_mask):
@@ -49,10 +57,32 @@ def save_mandelbrot_image(mandelbrot_data, max_iterations, filename='output.png'
 
     mandelbrot_color[in_set_mask] = 0
 
-    # Apply colormap and save
-    cmap = colormaps.get_cmap('hot')
+    # Apply colormap
+    cmap = colormaps.get_cmap("hot")
     colored = cmap(mandelbrot_color)
-    img = Image.fromarray((colored[:, :, :3] * 255).astype(np.uint8))
+    return (colored[:, :, :3] * 255).astype(np.uint8)
+
+
+def save_mandelbrot_image(mandelbrot_data, max_iterations, filename="output.png"):
+    """
+    Save Mandelbrot set data as a colorized image with logarithmic scaling.
+
+    Args:
+        mandelbrot_data: 2D array of iteration counts (height x width)
+        max_iterations: Maximum iteration value used in computation
+        filename: Output filename (will be saved in 'images/' directory)
+    """
+    # Ensure images directory exists
+    images_dir = "images"
+    os.makedirs(images_dir, exist_ok=True)
+
+    # Prepend images directory to filename if not already there
+    if not filename.startswith(images_dir + os.sep):
+        filepath = os.path.join(images_dir, filename)
+    else:
+        filepath = filename
+
+    img = Image.fromarray(colorize_mandelbrot(mandelbrot_data, max_iterations))
     img.save(filepath)
     print(f"Saved to {filepath}")
 
@@ -77,7 +107,7 @@ def run_benchmark(name, compute_func, *args):
     try:
         result = compute_func(*args)
         elapsed_ms = (time.time() - start_time) * 1000
-        print(f"✓ Completed in {elapsed_ms:.2f} ms")
+        print(f"✓ Completed in {elapsed_ms:.2f} ms ({format_rps(elapsed_ms)} RPS)")
         return result, elapsed_ms
     except Exception as e:
         elapsed_ms = (time.time() - start_time) * 1000
@@ -95,11 +125,13 @@ def print_results(results, width, height, max_iterations):
         height: Image height
         max_iterations: Maximum iterations used
     """
-    print(f"\n{'='*60}")
+    separator_width = 76
+
+    print(f"\n{'=' * separator_width}")
     print("BENCHMARK RESULTS")
-    print(f"{'='*60}")
+    print(f"{'=' * separator_width}")
     print(f"Configuration: {width}x{height} pixels, {max_iterations} max iterations")
-    print(f"{'-'*60}")
+    print(f"{'-' * separator_width}")
 
     # Filter successful results
     successful = [(name, time_ms) for name, time_ms in results if time_ms is not None]
@@ -122,19 +154,22 @@ def print_results(results, width, height, max_iterations):
     fastest_name, fastest_time = min(successful, key=lambda x: x[1])
 
     # Print results table
-    print(f"{'Benchmark':<30} {'Time (ms)':<15} {'Relative':<15}")
-    print(f"{'-'*60}")
+    print(f"{'Benchmark':<30} {'Time (ms)':<15} {'RPS':<12} {'Relative':<15}")
+    print(f"{'-' * separator_width}")
 
     for name, time_ms in successful:
         relative = time_ms / baseline_time
         marker = " ⭐" if time_ms == fastest_time else ""
-        print(f"{name:<30} {time_ms:>10.2f}      {relative:>6.2f}x{marker}")
+        print(
+            f"{name:<30} {time_ms:>10.2f}      "
+            f"{format_rps(time_ms):>8}     {relative:>6.2f}x{marker}"
+        )
 
-    print(f"{'-'*60}")
+    print(f"{'-' * separator_width}")
     baseline_name = "DuckDB (SQL)" if duckdb_time else fastest_name
     print(f"Baseline: {baseline_name} ({baseline_time:.2f} ms)")
     print(f"Fastest: {fastest_name} ({fastest_time:.2f} ms)")
-    print(f"{'='*60}\n")
+    print(f"{'=' * separator_width}\n")
 
 
 def print_header(width, height, max_iterations):
